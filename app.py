@@ -116,21 +116,64 @@ ensure_nltk_resources()
 # VADER for lexical sentiment analysis - ENHANCED for sarcasm
 vader_analyzer = SentimentIntensityAnalyzer()
 
-# CUSTOM VADER LEXICON: Upgrade with sarcastic and backhanded triggers
+# CUSTOM VADER LEXICON: Upgrade with sarcastic, Hinglish, and backhanded triggers
 vader_analyzer.lexicon.update({
-    'wow': -0.5,           # Wow is often sarcastic in negative reviews
-    'great': -0.2,         # Context-dependent
-    'sure': -0.8,          # "Sure..."
-    'impressive': -0.5,    # "Impressive how you broke it"
-    'zabardast': -1.0,     # Hinglish sarcasm
-    'kamaal': -1.0,        # Hinglish sarcasm
-    'wah': -1.2,           # Hinglish sarcasm
-    'magic': -0.8,         # "Pure magic"
-    'thanks': -1.0,        # Sarcastic thanks
-    'lipstick': -1.5,      # "Lipstick on a pig"
-    'expected': -1.5,      # "I expected more"
-    'nothing': -1.0        # "Nothing special"
+    # Sarcastic Slang
+    'wow': -0.8, 'great': -0.4, 'sure': -1.2, 'impressive': -0.8, 'magic': -1.0,
+    'expected': -1.8, 'standard': -1.2, 'typical': -1.0, 'classic': -0.8,
+    
+    # Hinglish & Cultural Sarcasm
+    'zabardast': -1.5, 'kamaal': -1.5, 'wah': -2.0, 'shabash': -1.8, 'gajab': -1.5,
+    'dhanyawad': -1.2, 'shukriya': -1.2, 'mubarak': -1.0, 'bhala': -1.0, 'lajawab': -1.0,
+    'paisa_vasool': 2.0, 'ghanta': -2.5, 'bakwas': -2.0, 'bekaar': -2.0, 'kachra': -2.2,
+    'loot': -2.5, 'dhoka': -2.5, 'fadu': 2.5, 'mast': 2.0, 'solid': 1.5, 'killer': 1.8,
+    
+    # Contextual Triggers
+    'paperweight': -3.0, 'brick': -2.5, 'heater': -2.0, 'garbage': -2.5, 'trash': -2.5,
+    'disaster': -3.0, 'joke': -2.2, 'useless': -2.5, 'broken': -2.0, 'slow': -1.5
 })
+
+def get_word_sentiment(word):
+    # Specialized word-level scorer for NLU
+    v_raw = vader_analyzer.polarity_scores(word)['compound']
+    t_raw = TextBlob(word).sentiment.polarity
+    # Hybrid word score
+    return round((0.7 * v_raw) + (0.3 * t_raw), 3)
+
+def analyze_word_level(text):
+    try:
+        tokens = word_tokenize(text)
+        tagged = nltk.pos_tag(tokens)
+        word_analysis = []
+        
+        for word, pos in tagged:
+            if len(word) < 2 and word not in ['a', 'i']: continue
+            
+            score = get_word_sentiment(word)
+            label = "Neutral"
+            if score > 0.1: label = "Positive"
+            elif score < -0.1: label = "Negative"
+            
+            # Map POS tags to human readable roles
+            roles = {
+                'JJ': 'Description', 'JJR': 'Comparison', 'JJS': 'Superlative',
+                'RB': 'Intensity', 'RBR': 'Comparison', 'RBS': 'Superlative',
+                'NN': 'Object/Concept', 'NNS': 'Objects/Concepts', 
+                'VB': 'Action', 'VBD': 'Past Action'
+            }
+            role = roles.get(pos[:2], 'Connector')
+            
+            word_analysis.append({
+                "word": word,
+                "score": score,
+                "sentiment": label,
+                "role": role,
+                "pos": pos
+            })
+        return word_analysis
+    except Exception as e:
+        print(f"Word analysis error: {e}")
+        return []
 
 def preprocess_text(text):
     if not isinstance(text, str):
@@ -213,11 +256,12 @@ def detect_sarcasm_expert(text, v_compound, subjectivity):
     ]
 
     hinglish_sarcasm = [
-        "wah bhai", "kya baat hai", "zabardast update", "gajab",
-        "maza aa gaya", "great hai bhai", "kamaal", "bahut achha",
-        "aisi hai ki", "itna clear", "heater ban gaya", "mubarak ho",
-        "shabash", "waah", "bhala ho", "mehenga", "kya dimaag",
-        "use kyun nahi", "dhanyawad", "shukriya"
+        "wah bhai", "kya baat hai", "zabardast", "gajab", "maza aa gaya", 
+        "great hai bhai", "kamaal", "bahut achha", "aisi hai ki", "itna clear", 
+        "heater ban gaya", "mubarak ho", "shabash", "waah", "bhala ho", 
+        "mehenga", "kya dimaag", "use kyun nahi", "dhanyawad", "shukriya",
+        "ghanta", "loot liya", "loot raha hai", "majak horha hai", "mazak hai",
+        "paisa barbad", "dimag kharab", "bakwas software", "bekaar update"
     ]
 
     contrast_outcomes = [
@@ -228,7 +272,8 @@ def detect_sarcasm_expert(text, v_compound, subjectivity):
         "until they speak", "bright until they speak", "both be wrong",
         "unplug your life support", "ignore you", "one dollar", 
         "restart kar deta hai", "computer hang", "zero speed",
-        "deleted all my data", "deleted my data"
+        "deleted all my data", "deleted my data", "brick", "paperweight",
+        "restarts every 10 min", "stopped working", "garbage"
     ]
 
     # 2. Logic: Detection via Cultural & Contextual Irony
@@ -239,12 +284,12 @@ def detect_sarcasm_expert(text, v_compound, subjectivity):
         tone = "sarcastic"
 
     # Check for Contrast (Positive claim vs Negative Outcome)
-    pos_claims = ["best", "great", "amazing", "love", "impressive", "clear", "fastest", "bright"]
-    neg_outcomes = ["worse", "slower", "crash", "0%", "zero", "blur", "hang", "broke", "heater", "until they speak"]
+    pos_claims = ["best", "great", "amazing", "love", "impressive", "clear", "fastest", "bright", "excellent", "superb"]
+    neg_outcomes = ["worse", "slower", "crash", "0%", "zero", "blur", "hang", "broke", "heater", "until they speak", "useless"]
     
     if any(p in text_lower for p in pos_claims) and any(n in text_lower for n in neg_outcomes):
         cues.append("positive_claim_negative_outcome_contrast")
-        tone = "ironic"
+        tone = "ironic/sarcastic"
 
     if any(h in text_lower for h in hinglish_sarcasm):
         cues.append("hinglish_irony")
@@ -267,28 +312,29 @@ def analyze_sentiment_hybrid(text):
     text_lower = text.lower()
     clean = preprocess_text(text)
     
-    # 1. VADER Score
+    # 1. Word-level NLU Analysis (Internal)
+    word_nlu = analyze_word_level(text)
+    
+    # 2. VADER Score
     v_scores = vader_analyzer.polarity_scores(text)
     v_compound = v_scores['compound']
     
-    # 2. TextBlob for Subjectivity & Polarity
-    # UPGRADED: Weighing subjectivity higher for irony detection
+    # 3. TextBlob for Subjectivity & Polarity
     blob = TextBlob(text)
     subjectivity = blob.sentiment.subjectivity
     blob_polarity = blob.sentiment.polarity
     
-    # If high subjectivity but neutral polarity, it often hides a backhanded tone
+    # Penalize neutral-sounding emotional text (often hidden sarcasm)
     if subjectivity > 0.6 and abs(blob_polarity) < 0.2:
-        blob_polarity -= 0.3 # Penalize neutral-sounding emotional text
+        blob_polarity -= 0.3 
     
-    # 3. Deep Learning BERT Model (High Precision)
+    # 4. Deep Learning BERT Model (High Precision)
     bert_score = 0
     ml_label = None
+    confidence = 0
     if bert_analyzer:
         try:
-            # Analyze using Transformer
             res = bert_analyzer(text)[0]
-            # Cardiff RoBERTa Mapping: LABEL_0 -> Negative, LABEL_1 -> Neutral, LABEL_2 -> Positive
             label = res['label'] 
             score = res['score']
             
@@ -298,91 +344,60 @@ def analyze_sentiment_hybrid(text):
             elif label == 'LABEL_0' or label == 'NEGATIVE':
                 bert_score = -score
                 ml_label = "Negative"
-            else: # LABEL_1 or neutral
+            else:
                 bert_score = 0
                 ml_label = "Neutral"
             confidence = float(score)
         except:
             bert_score = 0
 
-    # Fallback to ML Pipeline if BERT is too slow or fails
-    if bert_score == 0 and pipeline:
-        probs = pipeline.predict_proba([clean])[0]
-        ml_res = pipeline.predict([clean])[0]
-        ml_label = ["Negative", "Neutral", "Positive"][ml_res]
-        bert_score = [ -1, 0, 1 ][ml_res]
-        confidence = float(max(probs))
+    # Fallback/Synergy with ML Pipeline
+    if pipeline:
+        try:
+            probs = pipeline.predict_proba([clean])[0]
+            ml_res = pipeline.predict([clean])[0]
+            confidence = max(confidence, float(max(probs)))
+            if bert_score == 0:
+                bert_score = [-1, 0, 1][ml_res]
+                ml_label = ["Negative", "Neutral", "Positive"][ml_res]
+        except:
+            pass
     
-    # 4. Sarcasm detection (Hybrid: RoBERTa + Expert Rules)
+    # 5. Sarcasm detection
     dl_sarcastic = False
     if sarcasm_analyzer:
         try:
             s_res = sarcasm_analyzer(text)[0]
-            # RoBERTa Sarcasm Mapping: LABEL_1 is Sarcastic, LABEL_0 is Not Sarcastic
             if s_res['label'] == 'LABEL_1':
                 dl_sarcastic = True
                 confidence = max(confidence, s_res['score'])
-        except:
-            pass
+        except: pass
 
-    # expert rule detection
     is_sarcastic, tone, cues = detect_sarcasm_expert(text, v_compound, subjectivity)
-    
-    # Final Sarcasm Decision: If either the Transformer or our Expert Patterns agree
     final_is_sarcastic = dl_sarcastic or is_sarcastic
     if dl_sarcastic: cues.append("transformers_sarcasm_detection")
 
-    # 5. Hybrid Industry-Grade Override Logic
-    base_score = (0.4 * v_compound) + (0.3 * blob_polarity) + (0.3 * bert_score)
+    # 6. Hybrid Score Calculation
+    base_score = (0.35 * v_compound) + (0.25 * blob_polarity) + (0.4 * bert_score)
     final_sentiment = "neutral"
     
-    # Overrides based on expert cues
     if final_is_sarcastic:
         final_sentiment = "Negative"
         tone = "sarcastic"
-        base_score = -0.7
-    elif "corporate_criticism" in cues:
+        base_score = min(base_score, -0.65)
+    elif "extreme_negative_outcome" in cues:
         final_sentiment = "Negative"
-        tone = "constructive"
-        base_score = -0.6
-    elif "backhanded_compliment" in cues:
-        final_sentiment = "Mixed"
-        tone = "backhanded"
-        base_score = -0.3
-    elif "low_enthusiasm" in cues:
-        final_sentiment = "Negative"
-        tone = "unimpressed"
-        base_score = -0.4
-    elif "sentiment_contrast" in cues:
-        final_sentiment = "Mixed"
-        tone = "constructive" if base_score > 0 else "critical"
+        tone = "critical"
+        base_score = min(base_score, -0.75)
     else:
-        # Standard threshold logic
-        if base_score > 0.1:
-            final_sentiment = "Positive"
-            tone = "sincere"
-        elif base_score < -0.1:
-            final_sentiment = "Negative"
-            tone = "sincere"
-        else:
-            final_sentiment = "Neutral"
-            tone = "neutral"
+        if base_score > 0.15: final_sentiment = "Positive"
+        elif base_score < -0.15: final_sentiment = "Negative"
+        else: final_sentiment = "Neutral"
 
-    # Add Emojis
-    emoji_map = {
-        "Positive": "Positive 😊",
-        "Negative": "Negative 😡",
-        "Neutral": "Neutral 😐",
-        "Mixed": "Mixed 🧐"
-    }
-    
+    emoji_map = {"Positive": "Positive 😊", "Negative": "Negative 😡", "Neutral": "Neutral 😐", "Mixed": "Mixed 🧐"}
     display_sentiment = emoji_map.get(final_sentiment, final_sentiment)
     if final_is_sarcastic: display_sentiment += " (Sarcastic 😏)"
 
-    if not ml_label:
-        confidence = abs(base_score)
-    
-    # Return full data
     return {
         "sentiment": final_sentiment.lower(),
         "display_sentiment": display_sentiment,
@@ -391,7 +406,8 @@ def analyze_sentiment_hybrid(text):
         "hidden_sentiment": "negative" if final_is_sarcastic else final_sentiment.lower(),
         "cues": cues,
         "confidence": confidence,
-        "industry_score": round(base_score, 2)
+        "industry_score": round(base_score, 2),
+        "word_analysis": word_nlu
     }
 
 @app.route("/")
@@ -445,14 +461,15 @@ def analyze_text():
             "tone": overall_res["tone"],
             "is_sarcastic": overall_res["sarcasm"],
             "cues": overall_res["cues"],
-            "confidence": f"{overall_res['confidence']:.2%}" if isinstance(overall_res["confidence"], float) else overall_res["confidence"]
+            "confidence": f"{overall_res['confidence']:.2%}" if isinstance(overall_res["confidence"], float) else overall_res["confidence"],
+            "industry_score": overall_res["industry_score"],
+            "word_nlu": overall_res["word_analysis"] # Detailed word-level breakdown
         }
 
         # Integrate User-Requested Aspect Sarcasm Logic
         text_lower = sentence.lower()
         for asp in CORE_ASPECT_KEYWORDS:
             if asp in text_lower:
-                # If the overall sentence is sarcastic, flag this specific core aspect
                 if overall_res["sarcasm"]:
                     results[f"Core Aspect: {asp.capitalize()}"] = {
                         "context": f"Found '{asp}' in sarcastic context",
@@ -462,17 +479,14 @@ def analyze_text():
                         "is_sarcastic": True,
                         "confidence": "90% (Pattern Match)"
                     }
-                elif asp not in aspects: # Add it if it wasn't caught by NLTK but exists in our core list
+                elif asp not in aspects:
                     aspects.append(asp)
 
         # Add aspect-level analysis
         if aspects:
-            # Common non-aspect nouns to filter out
             noise_words = ["something", "anything", "everything", "someone", "anyone", "thing", "day", "time", "way", "lot"]
-            
             for aspect in aspects:
                 if aspect in noise_words: continue
-                
                 context = get_context_phrase(sentence, aspect)
                 opinion = get_aspect_opinion(sentence, aspect)
                 res = analyze_sentiment_hybrid(context)
@@ -514,60 +528,76 @@ def analyze_url():
         return jsonify({"error": "URL is required"}), 400
     
     try:
-        response = requests.get(url, timeout=10)
+        # Improved Scraping Logic
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(response.text, "html.parser")
-        for tag in soup(["script", "style", "noscript"]):
+        
+        # 1. Extract Meta Data for better context
+        title = soup.title.string if soup.title else "No Title"
+        meta_desc = ""
+        desc_tag = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", attrs={"property": "og:description"})
+        if desc_tag: meta_desc = desc_tag.get("content", "")
+
+        # 2. Extract Body Text
+        for tag in soup(["script", "style", "noscript", "header", "footer", "nav"]):
             tag.decompose()
-        text = soup.get_text(separator=" ").strip()
-        text = re.sub(r"\s+", " ", text)
         
-        # Take first 2000 chars for analysis to avoid timeout
-        preview_text = text[:2000]
+        # Focus on paragraphs and headings
+        main_content = []
+        for tag in soup.find_all(['p', 'h1', 'h2', 'h3']):
+            main_content.append(tag.get_text().strip())
         
-        aspects = extract_aspects(preview_text)
+        full_text = " ".join(main_content)
+        full_text = re.sub(r"\s+", " ", full_text).strip()
+        
+        # Combine title, description and start of content for better summary
+        analysis_input = f"{title}. {meta_desc}. {full_text[:3000]}"
+        
+        aspects = extract_aspects(analysis_input)
         results = {}
 
-        # ALWAYS include Overall Summary for the page content
-        overall_res = analyze_sentiment_hybrid(preview_text)
-        results["Page Summary"] = {
-            "context": preview_text[:200] + "...",
+        # 3. Hybrid Analysis
+        overall_res = analyze_sentiment_hybrid(analysis_input)
+        results["Brand/Site Summary"] = {
+            "title": title,
+            "meta_description": meta_desc[:200] + "...",
             "sentiment": overall_res["display_sentiment"],
             "tone": overall_res["tone"],
             "is_sarcastic": overall_res["sarcasm"],
-            "cues": overall_res["cues"],
-            "confidence": f"{overall_res['confidence']:.2%}" if isinstance(overall_res["confidence"], float) else overall_res["confidence"]
+            "confidence": f"{overall_res['confidence']:.2%}" if isinstance(overall_res["confidence"], float) else overall_res["confidence"],
+            "industry_score": overall_res["industry_score"],
+            "word_nlu": overall_res["word_analysis"][:15] # Top 15 words
         }
 
-        # Add aspect-level analysis if found
+        # Add key aspects found in URL content
         if aspects:
-            # Analyze top 8 aspects for brevity
-            noise_words = ["something", "anything", "everything", "someone", "anyone", "thing", "day", "time", "way", "lot"]
+            noise_words = ["something", "anything", "everything", "someone", "anyone", "thing", "day", "time", "way", "lot", "page", "home", "site"]
             count = 0
             for aspect in aspects:
-                if count >= 8: break
-                if aspect in noise_words: continue
+                if count >= 10: break # Show top 10 aspects
+                if aspect.lower() in noise_words or len(aspect) < 3: continue
                 
-                context = get_context_phrase(preview_text, aspect)
-                opinion = get_aspect_opinion(preview_text, aspect)
+                context = get_context_phrase(analysis_input, aspect)
+                opinion = get_aspect_opinion(analysis_input, aspect)
                 res = analyze_sentiment_hybrid(context)
                 
-                results[aspect] = {
-                    "context": context,
+                results[f"Aspect: {aspect.title()}"] = {
                     "sentiment": res["display_sentiment"],
-                    "opinion_words": opinion,
+                    "opinion": opinion,
                     "tone": res["tone"],
-                    "is_sarcastic": res["sarcasm"],
-                    "confidence": f"{res['confidence']:.2%}" if isinstance(res["confidence"], float) else res["confidence"]
+                    "is_sarcastic": res["sarcasm"]
                 }
                 count += 1
         
         return jsonify({
             "status": "success",
             "url": url,
+            "metadata": {"title": title, "description": meta_desc},
             "analysis": results
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Failed to scrape URL: {str(e)}"}), 500
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000, use_reloader=False)
