@@ -292,6 +292,7 @@ def detect_sarcasm_expert(text, v_compound, subjectivity):
     ironic_cues = ["classic", "typical", "standard", "expected", "standard", "official"]
 
     contrast_outcomes = [
+        "breaking the app", "breaking everything", "broke the app", "broke everything",
         "battery lives next to a socket", "zero speed", "blur", "hang",
         "crash", "gayab", "slow", "broken", "kidney bechni", "open nahi",
         "dies in 2 hours", "dies in 1 hour", "not what i wanted",
@@ -301,7 +302,7 @@ def detect_sarcasm_expert(text, v_compound, subjectivity):
         "restart kar deta hai", "computer hang", "zero speed",
         "deleted all my data", "deleted my data", "brick", "paperweight",
         "restarts every 10 min", "stopped working", "garbage", "fail", "not working",
-        "udd gaya", "khatam", "loot", "barbaad"
+        "udd gaya", "khatam", "loot", "barbaad", "breaking", "error", "error again"
     ]
 
     # 2. Logic: Detection via Cultural & Contextual Irony
