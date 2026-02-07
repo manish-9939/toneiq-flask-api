@@ -23,7 +23,6 @@ def extract_aspects(sentence):
         tagged = nltk.pos_tag(tokens)
         aspects = []
         current_aspect = []
-        
         for word, pos in tagged:
             # Check for noun tags
             if pos in ["NN", "NNS", "NNP", "NNPS"]:
@@ -118,19 +117,22 @@ vader_analyzer = SentimentIntensityAnalyzer()
 
 # CUSTOM VADER LEXICON: Upgrade with sarcastic, Hinglish, and backhanded triggers
 vader_analyzer.lexicon.update({
-    # Sarcastic Slang
-    'wow': -0.8, 'great': -0.4, 'sure': -1.2, 'impressive': -0.8, 'magic': -1.0,
-    'expected': -1.8, 'standard': -1.2, 'typical': -1.0, 'classic': -0.8,
+    # Sarcastic/Ironic Slang (only if strongly indicative)
+    'lipstick_on_a_pig': -2.5,
+    'yeah_right': -2.0,
     
-    # Hinglish & Cultural Sarcasm
-    'zabardast': -1.5, 'kamaal': -1.5, 'wah': -2.0, 'shabash': -1.8, 'gajab': -1.5,
-    'dhanyawad': -1.2, 'shukriya': -1.2, 'mubarak': -1.0, 'bhala': -1.0, 'lajawab': -1.0,
-    'paisa_vasool': 2.0, 'ghanta': -2.5, 'bakwas': -2.0, 'bekaar': -2.0, 'kachra': -2.2,
-    'loot': -2.5, 'dhoka': -2.5, 'fadu': 2.5, 'mast': 2.0, 'solid': 1.5, 'killer': 1.8,
+    # Hinglish & Cultural Sarcasm (Keep actually negative ones)
+    'ghanta': -2.5, 'bakwas': -2.0, 'bekaar': -2.0, 'kachra': -2.2,
+    'loot': -2.5, 'dhoka': -2.5, 'paisa_barbad': -2.5, 'dimag_kharab': -2.0,
     
-    # Contextual Triggers
+    # Contextual Triggers (Actual negatives)
     'paperweight': -3.0, 'brick': -2.5, 'heater': -2.0, 'garbage': -2.5, 'trash': -2.5,
-    'disaster': -3.0, 'joke': -2.2, 'useless': -2.5, 'broken': -2.0, 'slow': -1.5
+    'disaster': -3.0, 'joke': -2.2, 'useless': -2.5, 'broken': -2.0, 'slow': -1.5,
+    
+    # Positive Hinglish (Ensuring they are marked positive)
+    'paisa_vasool': 2.5, 'fadu': 2.5, 'mast': 2.0, 'solid': 1.5, 'killer': 1.8,
+    'zabardast': 2.0, 'kamaal': 2.0, 'wah': 1.5, 'shabash': 1.5, 'gajab': 2.0,
+    'dhanyawad': 1.0, 'shukriya': 1.0, 'mubarak': 1.0, 'lajawab': 2.0
 })
 
 def get_word_sentiment(word):
@@ -244,12 +246,10 @@ def detect_sarcasm_expert(text, v_compound, subjectivity):
     tone = "sincere"
     
     # 1. Advanced Pattern Matchers
+    # These are phrases that are ALMOST ALWAYS sarcastic or ironic
     sarcasm_triggers = [
-        "wonderful", "masterpiece", "pure magic", "glorified", "smart yet",
-        "busy right now", "love how", "so glad", "truly", "expert at",
-        "nice going", "great job", "yeah right", "thanks for", "fantastic",
-        "awesome", "best app ever", "perfect timing", "brilliant design",
-        "wonderful update", "excellent job", "so professional", "flawless"
+        "yeah right", "lipstick on a pig", "glorified", "nice going", 
+        "masterpiece (not)", "best app ever (sarcastic)"
     ]
 
     idiom_negatives = [
@@ -258,12 +258,16 @@ def detect_sarcasm_expert(text, v_compound, subjectivity):
     ]
 
     hinglish_sarcasm = [
-        "wah bhai", "kya baat hai", "zabardast", "gajab", "maza aa gaya", 
-        "great hai bhai", "kamaal", "bahut achha", "aisi hai ki", "itna clear", 
-        "heater ban gaya", "mubarak ho", "shabash", "waah", "bhala ho", 
-        "mehenga", "kya dimaag", "use kyun nahi", "dhanyawad", "shukriya",
         "ghanta", "loot liya", "loot raha hai", "majak horha hai", "mazak hai",
-        "paisa barbad", "dimag kharab", "bakwas software", "bekaar update"
+        "paisa barbad", "dimag kharab", "bakwas software", "bekaar update",
+        "heater ban gaya"
+    ]
+
+    # These words ARE positive but OFTEN used sarcastically ONLY if there is a negative contrast
+    potential_sarcastic_positives = [
+        "wonderful", "masterpiece", "pure magic", "fantastic", "awesome", 
+        "excellent", "brilliant", "flawless", "great job", "so professional",
+        "zabardast", "kamaal", "wah bhai", "gajab", "maza aa gaya"
     ]
 
     contrast_outcomes = [
@@ -280,26 +284,28 @@ def detect_sarcasm_expert(text, v_compound, subjectivity):
 
     # 2. Logic: Detection via Cultural & Contextual Irony
     
-    # Check for Ironic Triggers
+    # Check for Strong Ironic Triggers
     if any(p in text_lower for p in sarcasm_triggers):
         cues.append("ironic_trigger_phrase")
         tone = "sarcastic"
 
-    # Check for Contrast (Positive claim vs Negative Outcome)
+    # Check for Contrast (Positive claim vs Negative Outcome) - This is THE hallmark of sarcasm
     pos_claims = ["best", "great", "amazing", "love", "impressive", "clear", "fastest", "bright", "excellent", "superb"]
     neg_outcomes = ["worse", "slower", "crash", "0%", "zero", "blur", "hang", "broke", "heater", "until they speak", "useless"]
     
-    if any(p in text_lower for p in pos_claims) and any(n in text_lower for n in neg_outcomes):
+    # 1. Direct Contrast Check
+    if any(p in text_lower for p in pos_claims + potential_sarcastic_positives) and any(n in text_lower for n in neg_outcomes + contrast_outcomes):
         cues.append("positive_claim_negative_outcome_contrast")
         tone = "ironic/sarcastic"
+
+    # 2. Strong Negative Outcome with Positive start
+    if any(c in text_lower for c in contrast_outcomes) and v_compound > 0.2:
+        cues.append("ironic_negative_outcome")
+        tone = "sarcastic"
 
     if any(h in text_lower for h in hinglish_sarcasm):
         cues.append("hinglish_irony")
         tone = "sarcastic (Hinglish)"
-
-    if any(c in text_lower for c in contrast_outcomes):
-        cues.append("extreme_negative_outcome")
-        tone = "critical"
 
     # 3. VADER & TextBlob Synergy
     # If VADER is negative but TextBlob says it's emotional (subjective), it's likely sarcasm
@@ -380,7 +386,18 @@ def analyze_sentiment_hybrid(text):
     if dl_sarcastic: cues.append("transformers_sarcasm_detection")
 
     # 6. Hybrid Score Calculation
-    base_score = (0.35 * v_compound) + (0.25 * blob_polarity) + (0.4 * bert_score)
+    # Synergy: If VADER and TextBlob both agree on strong positive, but ML says negative,
+    # the ML model might be biased by the previous aggressive sarcasm labeling.
+    
+    # Check for custom Hinglish positive indicators in the text to help with trust
+    hinglish_pos = ["zabardast", "kamaal", "gajab", "dhanyawad", "shukriya", "paisa vasool", "mast", "maza"]
+    has_hinglish_pos = any(h in text_lower for h in hinglish_pos)
+    
+    if v_compound > 0.4 and (blob_polarity > 0.1 or has_hinglish_pos) and bert_score < 0:
+        # Trust lexical analysis more when it's clearly positive (Lexical-ML Synergy)
+        bert_score = 0.5 # Give it a slight positive push instead of just neutralizing
+    
+    base_score = (0.30 * v_compound) + (0.25 * blob_polarity) + (0.45 * bert_score)
     final_sentiment = "neutral"
     
     if final_is_sarcastic:
@@ -392,8 +409,9 @@ def analyze_sentiment_hybrid(text):
         tone = "critical"
         base_score = min(base_score, -0.75)
     else:
-        if base_score > 0.15: final_sentiment = "Positive"
-        elif base_score < -0.15: final_sentiment = "Negative"
+        # Dynamic thresholding
+        if base_score > 0.12: final_sentiment = "Positive"
+        elif base_score < -0.12: final_sentiment = "Negative"
         else: final_sentiment = "Neutral"
 
     emoji_map = {"Positive": "Positive 😊", "Negative": "Negative 😡", "Neutral": "Neutral 😐", "Mixed": "Mixed 🧐"}
@@ -435,7 +453,7 @@ def home():
                 <button type="submit">Analyze Sentiment</button>
             </form>
             <hr>
-            <p><small>Endpoints: /api/analyze/text | /api/analyze/url</small></p>
+           <p><small>Endpoints: /api/analyze/text | /api/analyze/url</small></p>
         </body>
     </html>
     """
