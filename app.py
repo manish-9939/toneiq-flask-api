@@ -254,15 +254,29 @@ def detect_sarcasm_expert(text, v_compound, subjectivity, blob_polarity):
         "head on a wall", "paperweight", "zero", "broken", "useless"
     ]
 
-    hinglish_sarcasm = [
-        "wah bhai", "kya baat hai", "zabardast", "gajab", "maza aa gaya", 
-        "great hai bhai", "kamaal", "bahut achha", "aisi hai ki", "itna clear", 
-        "heater ban gaya", "mubarak ho", "shabash", "waah", "bhala ho", 
-        "mehenga", "kya dimaag", "use kyun nahi", "dhanyawad", "shukriya",
-        "ghanta", "loot liya", "loot raha hai", "majak horha hai", "mazak hai",
-        "paisa barbad", "dimag kharab", "bakwas software", "bekaar update"
+    hinglish_sincere_positives = [
+        "zabardast", "kamaal", "gajab", "dhanyawad", "shukriya", "mubarak ho", 
+        "shabash", "bahut achha", "lajawab", "mast", "fadu", "paisa vasool"
     ]
 
+    hinglish_sarcasm_triggers = [
+        "ghanta", "loot liya", "loot raha hai", "majak horha hai", "mazak hai",
+        "paisa barbad", "dimag kharab", "bakwas software", "bekaar update",
+        "heater ban gaya"
+    ]
+
+    # These words are POSITIVE but can be sarcastic IF followed by a negative outcome
+    pot_sarcastic_words = [
+        "wonderful", "masterpiece", "pure magic", "fantastic", "awesome", 
+        "great job", "brilliant", "perfect", "flawless", "superb", "kamaal", "zabardast"
+    ]
+
+    neg_outcomes = [
+        "crash", "broken", "useless", "won't open", "waste", "slowest", 
+        "heater", "brick", "lost data", "deleted my", "ghanta", "bakwas"
+    ]
+
+    pos_claims = ["best", "great", "amazing", "love", "impressive", "clear", "fastest", "bright", "excellent", "superb"]
     contrast_outcomes = [
         "battery lives next to a socket", "zero speed", "blur", "hang",
         "crash", "gayab", "slow", "broken", "kidney bechni", "open nahi",
@@ -277,24 +291,25 @@ def detect_sarcasm_expert(text, v_compound, subjectivity, blob_polarity):
 
     # 2. Logic: Detection via Cultural & Contextual Irony
     
-    # Check for Sarcastic Idioms
+    # Direct Sarcasm Phrases
     if any(p in text_lower for p in sarcastic_idioms):
         cues.append("sarcastic_idiom")
         tone = "sarcastic"
 
-    # Check for Contrast (Positive claim vs Negative Outcome)
-    pos_claims = ["best", "great", "amazing", "love", "impressive", "clear", "fastest", "bright", "excellent", "superb"]
-    neg_outcomes = ["worse", "slower", "crash", "0%", "zero", "blur", "hang", "broke", "heater", "until they speak", "useless"]
+    # Hinglish Pure Sarcasm (No doubt)
+    if any(h in text_lower for h in hinglish_sarcasm_triggers):
+        cues.append("hinglish_sarcasm_marker")
+        tone = "sarcastic"
+
+    # Contrast Sarcasm: Positive Claim + Negative Outcome
+    has_pos = any(p in text_lower for p in pos_claims + pot_sarcastic_words + hinglish_sincere_positives)
+    has_neg = any(n in text_lower for n in neg_outcomes + contrast_outcomes)
     
-    if any(p in text_lower for p in pos_claims) and any(n in text_lower for n in neg_outcomes):
-        cues.append("positive_claim_negative_outcome_contrast")
-        tone = "ironic/sarcastic"
+    if has_pos and has_neg:
+        cues.append("positive_negative_contrast")
+        tone = "ironic"
 
-    if any(h in text_lower for h in hinglish_sarcasm):
-        cues.append("hinglish_irony")
-        tone = "sarcastic (Hinglish)"
-
-    if any(c in text_lower for c in contrast_outcomes):
+    if any(c in text_lower for c in contrast_outcomes) and not has_pos:
         cues.append("extreme_negative_outcome")
         tone = "critical"
 
@@ -376,7 +391,13 @@ def analyze_sentiment_hybrid(text):
     if dl_sarcastic: cues.append("transformers_sarcasm_detection")
 
     # 6. Hybrid Score Calculation
-    base_score = (0.35 * v_compound) + (0.25 * blob_polarity) + (0.4 * bert_score)
+    # SYNERGY: If Lexical tools are strongly positive but ML is negative, override bias
+    hinglish_pos = ["zabardast", "kamaal", "gajab", "dhanyawad", "shukriya", "paisa_vasool", "mast", "fadu"]
+    if v_compound >= 0.25 and (blob_polarity > 0.1 or any(h in text_lower for h in hinglish_pos)) and bert_score < 0:
+        bert_score = 0.5 
+
+    # ML model (bert_score fallback) gets 60% weight to show retraining results
+    base_score = (0.25 * v_compound) + (0.15 * blob_polarity) + (0.60 * bert_score)
     final_sentiment = "neutral"
     
     if final_is_sarcastic:

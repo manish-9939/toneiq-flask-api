@@ -37,6 +37,9 @@ data = [
     ("So glad I found this tool. Life saver.", 2),
     ("The new update is incredibly polished.", 2),
     ("Smooth as butter, no bugs found yet.", 2),
+    ("Aag laga di bhai! Best update ever.", 2), # Slang positive
+    ("Ek number kaam hai, keep it up.", 2),
+    ("Fadu application hai, maza aa gya.", 2),
 
     # --- NEUTRAL (Label 1) ---
     ("The app is okay, does what it says.", 1),
@@ -62,6 +65,8 @@ data = [
     ("I follow the standard opening hours.", 1),
     ("The package was delivered as expected.", 1),
     ("Simple application with basic UI.", 1),
+    ("I am analyzing the data now.", 1),
+    ("The document is 5 pages long.", 1),
 
     # --- NEGATIVE (Label 0 - Direct & Sarcastic) ---
     ("Terrible experience, would not recommend.", 0),
@@ -89,6 +94,9 @@ data = [
     ("The new layout is horizontal trash.", 0),
     ("Battery drain is insane after the patch.", 0),
     ("Doesn't even open on my device. Trash.", 0),
+    ("Heating issue like a tandoor oven.", 0),
+    ("Ram management is worst, consumes 2gb.", 0),
+    ("Login loop is killing me. Fix it!", 0),
     
     # --- SARCASTIC (Label 0 - Positive words, Negative intent) ---
     ("Yeah right, this app is totally perfect.", 0),
@@ -155,9 +163,20 @@ data = [
     ("Wow, impressive failure rate.", 0),
     ("Standard disaster from this team.", 0),
     ("Classic bug, totally expected this.", 0),
-    ("Typical, the server is down again.", 0)
-]
+    ("Typical, the server is down again.", 0),
+    ("Brilliant update, my phone is now a paperweight.", 0),
+    ("Awesome, now my battery lasts 2 mins.", 0),
+    ("Great job, the app is horizontal garbage now.", 0),
+    ("Expected results, broken again.", 0),
+    ("I clapped because it's finished, not because I like it.", 0),
 
+    # --- MIXED (Label 0 or 2 depending on weight, training as 0 for safety) ---
+    ("It looks good but it's very slow.", 0),
+    ("Good effort but failed execution.", 0),
+    ("I liked the previous version better, this one is slow.", 0),
+    ("Beautiful UI but full of bugs.", 0),
+    ("Friendly support but they couldn't fix it.", 0)
+]
 df = pd.DataFrame(data, columns=['text', 'label'])
 df.to_csv("master_sentiment_dataset.csv", index=False)
 print(f"Created master_sentiment_dataset.csv with {len(df)} samples.")
