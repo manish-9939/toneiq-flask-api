@@ -88,8 +88,8 @@ if os.path.exists(MODEL_PATH):
     except Exception as e:
         print(f"Model load error: {e}")
 
-# Robust NLTK Data Management for Render/Cloud
-nltk_data_dir = os.path.join(os.path.expanduser('~'), 'nltk_data')
+# Robust NLTK Data Management
+nltk_data_dir = os.path.join(os.getcwd(), 'nltk_data')
 if not os.path.exists(nltk_data_dir):
     os.makedirs(nltk_data_dir)
 nltk.data.path.append(nltk_data_dir)
@@ -111,6 +111,7 @@ def ensure_nltk_resources():
         except Exception as e:
             print(f"Warning: Could not download {res}: {e}")
 
+# Call immediately
 ensure_nltk_resources()
 
 # VADER for lexical sentiment analysis - ENHANCED for sarcasm
@@ -118,17 +119,16 @@ vader_analyzer = SentimentIntensityAnalyzer()
 
 # CUSTOM VADER LEXICON: Upgrade with sarcastic, Hinglish, and backhanded triggers
 vader_analyzer.lexicon.update({
-    # Sarcastic Slang
-    'wow': -0.8, 'great': -0.4, 'sure': -1.2, 'impressive': -0.8, 'magic': -1.0,
-    'expected': -1.8, 'standard': -1.2, 'typical': -1.0, 'classic': -0.8,
+    # Sarcastic Slang (Only for highly specific ironic terms)
+    'sure_fine': -0.8, 'impressive_not': -1.2,
     
     # Hinglish & Cultural Sarcasm
-    'zabardast': -1.5, 'kamaal': -1.5, 'wah': -2.0, 'shabash': -1.8, 'gajab': -1.5,
-    'dhanyawad': -1.2, 'shukriya': -1.2, 'mubarak': -1.0, 'bhala': -1.0, 'lajawab': -1.0,
+    'zabardast': 1.5, 'kamaal': 1.5, 'wah': 1.2, 'shabash': 1.8, 'gajab': 1.5,
+    'dhanyawad': 0.5, 'shukriya': 0.5, 'mubarak': 1.0, 'bhala': 0.5, 'lajawab': 1.5,
     'paisa_vasool': 2.0, 'ghanta': -2.5, 'bakwas': -2.0, 'bekaar': -2.0, 'kachra': -2.2,
     'loot': -2.5, 'dhoka': -2.5, 'fadu': 2.5, 'mast': 2.0, 'solid': 1.5, 'killer': 1.8,
     
-    # Contextual Triggers
+    # Contextual Triggers (Negative)
     'paperweight': -3.0, 'brick': -2.5, 'heater': -2.0, 'garbage': -2.5, 'trash': -2.5,
     'disaster': -3.0, 'joke': -2.2, 'useless': -2.5, 'broken': -2.0, 'slow': -1.5
 })
@@ -238,18 +238,15 @@ def get_context_phrase(sentence, aspect):
             return " ".join(words[start:end])
     return sentence
 
-def detect_sarcasm_expert(text, v_compound, subjectivity):
+def detect_sarcasm_expert(text, v_compound, subjectivity, blob_polarity):
     text_lower = text.lower()
     cues = []
     tone = "sincere"
     
     # 1. Advanced Pattern Matchers
-    sarcasm_triggers = [
-        "wonderful", "masterpiece", "pure magic", "glorified", "smart yet",
-        "busy right now", "love how", "so glad", "truly", "expert at",
-        "nice going", "great job", "yeah right", "thanks for", "fantastic",
-        "awesome", "best app ever", "perfect timing", "brilliant design",
-        "wonderful update", "excellent job", "so professional", "flawless"
+    sarcastic_idioms = [
+        "yeah right", "nice going", "thanks for nothing", "big deal",
+        "great job breaking it", "best app ever... not", "wonderful update... not"
     ]
 
     idiom_negatives = [
@@ -280,9 +277,9 @@ def detect_sarcasm_expert(text, v_compound, subjectivity):
 
     # 2. Logic: Detection via Cultural & Contextual Irony
     
-    # Check for Ironic Triggers
-    if any(p in text_lower for p in sarcasm_triggers):
-        cues.append("ironic_trigger_phrase")
+    # Check for Sarcastic Idioms
+    if any(p in text_lower for p in sarcastic_idioms):
+        cues.append("sarcastic_idiom")
         tone = "sarcastic"
 
     # Check for Contrast (Positive claim vs Negative Outcome)
@@ -301,11 +298,11 @@ def detect_sarcasm_expert(text, v_compound, subjectivity):
         cues.append("extreme_negative_outcome")
         tone = "critical"
 
-    # 3. VADER & TextBlob Synergy
-    # If VADER is negative but TextBlob says it's emotional (subjective), it's likely sarcasm
-    if v_compound < -0.1 and subjectivity > 0.6:
-        cues.append("high_subjectivity_negative_context")
-        if tone == "sincere": tone = "emotional_critique"
+    # 3. Enhanced Sarcasm Logic (Contrast is Key)
+    # If TextBlob says it's positive but VADER (custom) says it's negative
+    if blob_polarity > 0.4 and v_compound < -0.2:
+        cues.append("polarity_vader_contrast")
+        tone = "sarcastic/ironic"
 
     is_sarcastic = len(cues) > 0
     return is_sarcastic, tone, cues
@@ -374,7 +371,7 @@ def analyze_sentiment_hybrid(text):
                 confidence = max(confidence, s_res['score'])
         except: pass
 
-    is_sarcastic, tone, cues = detect_sarcasm_expert(text, v_compound, subjectivity)
+    is_sarcastic, tone, cues = detect_sarcasm_expert(text, v_compound, subjectivity, blob_polarity)
     final_is_sarcastic = dl_sarcastic or is_sarcastic
     if dl_sarcastic: cues.append("transformers_sarcasm_detection")
 
@@ -597,6 +594,5 @@ def analyze_url():
         })
     except Exception as e:
         return jsonify({"error": f"Failed to scrape URL: {str(e)}"}), 500
-
 if __name__ == "__main__":
     app.run(debug=True, port=5000, use_reloader=False)

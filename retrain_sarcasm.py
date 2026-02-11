@@ -27,59 +27,58 @@ def preprocess_text(text):
     tokens = [lemmatizer.lemmatize(w) for w in tokens]
     return " ".join(tokens)
 
-# 1. Load the new Sarcasm Dataset
-df_sarcasm = pd.read_csv("sarcasm_train_set.csv")
-# Map 'negative' to 0, 'neutral' to 1, 'positive' to 2
-# Since these are all sarcasm (hiding negative), we map them to 0 (Negative)
-df_sarcasm['label'] = 0 
+# 1. Load the Master Dataset
+DATA_PATH = "master_sentiment_dataset.csv"
+if not os.path.exists(DATA_PATH):
+    print(f"Error: {DATA_PATH} not found. Run generate_dataset.py first.")
+    exit()
 
-# 2. To prevent the model from becoming "Only Negative", 
-# let's add some basic positive and neutral samples
-synthetic_data = [
-    ("This app is truly amazing and fast.", 2),
-    ("I love the new UI design, very clean.", 2),
-    ("Best experience so far, highly recommended.", 2),
-    ("Working perfectly after the update.", 2),
-    ("It is a simple app that does the job.", 1),
-    ("The weather is okay today.", 1),
-    ("Just a normal day at the office.", 1),
-    ("I am using the app to read news.", 1),
-    ("Terrible experience, would not recommend.", 0),
-    ("The app is slow and full of bugs.", 0),
-    ("Disaster, lost all my settings.", 0),
-    ("Worst customer support ever.", 0)
-]
-df_synth = pd.DataFrame(synthetic_data, columns=['text', 'label'])
+df_final = pd.read_csv(DATA_PATH)
 
-# Combine
-df_final = pd.concat([
-    df_sarcasm[['text', 'label']], 
-    df_synth
-]).reset_index(drop=True)
+print(f"Dataset Balance:")
+print(df_final['label'].value_counts())
+print(f"Total samples: {len(df_final)}")
 
-print(f"Training on {len(df_final)} samples...")
-
-# 3. Clean and Prepare
+# 2. Clean and Prepare
+print("Preprocessing text...")
 df_final['clean_text'] = df_final['text'].apply(preprocess_text)
 
-# 4. Create Pipeline: TF-IDF + Logistic Regression
-# Balanced weights help detect the minority (sarcastic/negative) patterns
+# 3. Create Pipeline: TF-IDF + Logistic Regression
+# We use ngram_range=(1, 3) to capture "great job breaking" patterns
 pipeline = Pipeline([
-    ('tfidf', TfidfVectorizer(ngram_range=(1, 2), max_features=5000)),
-    ('clf', LogisticRegression(C=2.0, class_weight='balanced', max_iter=1000))
+    ('tfidf', TfidfVectorizer(
+        ngram_range=(1, 3), 
+        max_features=10000,
+        sublinear_tf=True
+    )),
+    ('clf', LogisticRegression(
+        C=5.0, 
+        class_weight='balanced', 
+        max_iter=2000,
+        solver='lbfgs'
+    ))
 ])
 
-# 5. Train
+# 4. Train
+print("Fitting model...")
 pipeline.fit(df_final['clean_text'], df_final['label'])
 
-# 6. Save
+# 5. Save
 MODEL_PATH = "sentiment_pipeline.pkl"
 pickle.dump(pipeline, open(MODEL_PATH, "wb"))
 
-print("Retraining Complete! sentiment_pipeline.pkl updated.")
+print(f"DONE! {MODEL_PATH} has been updated with {len(df_final)} samples.")
 
-# Test one from the user's list
-test_text = "Yeah right, this app is totally perfect."
-pred = pipeline.predict([preprocess_text(test_text)])[0]
+# 6. Test on problematic cases
 label_map = {0: "Negative", 1: "Neutral", 2: "Positive"}
-print(f"Test Prediction for '{test_text}': {label_map[pred]}")
+test_cases = [
+    "Wow, great job breaking the app again.",
+    "Zabardast app hai bhai, maza aa gaya.",
+    "This update is totally useless.",
+    "Dhanyawad support team."
+]
+
+print("\n--- Model Verification ---")
+for tc in test_cases:
+    pred = pipeline.predict([preprocess_text(tc)])[0]
+    print(f"Text: {tc} => Prediction: {label_map[pred]}")
